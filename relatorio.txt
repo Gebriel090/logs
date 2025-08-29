@@ -1,1 +1,115 @@
-isso aó
+#########################################################################
+# RELATÓRIO DE REMEDIAÇÃO DE VULNERABILIDADES - cidadao.mg.gov.br     #
+# DATA: 28 de Agosto de 2025                                            #
+# OBJETIVO: Instruções para mitigar as falhas de segurança identificadas. #
+#########################################################################
+
+Este documento fornece instruções detalhadas para resolver as vulnerabilidades encontradas durante o pentest externo no IP 146.235.39.137 (cidadao.mg.gov.br).
+
+-------------------------------------------------------------------------
+1. MITIGAÇÃO DE VULNERABILIDADES - PORTA 8006/TCP (PROXMOX VIRTUAL ENVIRONMENT 7.2-3 HTTPS)
+   PRIORIDADE: CRÍTICA
+-------------------------------------------------------------------------
+
+O painel de gerenciamento do Proxmox VE é uma interface crítica e não deve estar exposta publicamente.
+
+AÇÕES:
+
+1.1. REMOVER ACESSO PÚBLICO À INTERFACE DO PROXMOX VE:
+     - Bloquear todo o tr tráfego de entrada para a porta 8006 no firewall de borda (ou no firewall do OCI Load Balancer) para que o Proxmox VE não seja acessível pela internet.
+     - Configure o acesso apenas de redes internas ou via VPN para IPs de administração confiáveis.
+     - Implemente uma VPN (Virtual Private Network) para administradores acessarem o painel de forma segura.
+
+1.2. ATUALIZAR O PROXMOX VIRTUAL ENVIRONMENT:
+     - Atualize o Proxmox VE 7.2-3 para a versão mais recente e estável disponível.
+     - Verifique as notas de lançamento e aplique todas as atualizações de segurança para o sistema operacional Debian subjacente (kernel, bibliotecas, etc.).
+
+1.3. APLICAR PATCHES PARA CVES ESPECÍFICAS:
+     - CVE-2024-21545 (Escalonamento de Privilégios via API): Certifique-se de que todas as correções para esta vulnerabilidade na API do Proxmox estejam aplicadas com a atualização da versão.
+     - CVE-2022-35508 (SSRF e Escalonamento de Privilégios): Verifique se os patches para SSRF e as falhas relacionadas a arquivos de backup estão instalados.
+     - CVE-2022-0847 (DirtyPipe - Kernel Linux): Verifique a versão do kernel Linux. Se for inferior a 5.15.25, atualize o kernel para uma versão corrigida para mitigar esta vulnerabilidade de escalonamento de privilégios local.
+
+1.4. IMPLEMENTAR AUTENTICAÇÃO FORTE:
+     - Habilite e force a autenticação de dois fatores (2FA/MFA) para todos os usuários com acesso ao Proxmox VE.
+     - Configure políticas de senha robustas (complexidade, rotação, histórico).
+
+1.5. REVISAR E REMOVER CONTAS DE USUÁRIO:
+     - Remova todas as contas de usuário padrão, de teste ou não utilizadas.
+     - Revise os privilégios de cada conta para garantir o Princípio do Menor Privilégio.
+
+1.6. CONFIGURAR AUDITORIA E MONITORAMENTO DE LOGS:
+     - Configure o Proxmox VE para registrar logs detalhados de autenticação, acesso e ações administrativas.
+     - Integre os logs a um sistema centralizado de gerenciamento de logs (SIEM) para monitoramento em tempo real e detecção de anomalias.
+
+-------------------------------------------------------------------------
+2. MITIGAÇÃO DE VULNERABILIDADES - PORTA 443/TCP (HTTPS - cidadao.mg.gov.br)
+   PRIORIDADE: ALTA (Vulnerabilidades de Aplicação Web)
+-------------------------------------------------------------------------
+
+A aplicação web é o principal ponto de contato para usuários e merece uma análise aprofundada.
+
+AÇÕES:
+
+2.1. REALIZAR PENTEST DE CAIXA BRANCA/CINZA NA APLICAÇÃO WEB:
+     - Contratar (ou executar internamente) um pentest focado nas vulnerabilidades da aplicação web (OWASP Top 10).
+     - Testar injeções (SQLi, XSS, Command Injection), quebras de controle de acesso (IDOR, BOLA), falhas de autenticação/autorização, manipulação de parâmetros, etc.
+     - Focar na API (endpoints e métodos) utilizada pela aplicação Angular.
+
+2.2. REVISÃO DE CÓDIGO E APIs:
+     - Realizar uma revisão de código-fonte na aplicação Angular e no backend para identificar vulnerabilidades.
+     - Garantir que todas as APIs estejam devidamente autenticadas, autorizadas e validem a entrada de dados.
+
+2.3. IMPLEMENTAR CABEÇALHOS DE SEGURANÇA HTTP ROBUSTOS:
+     - Content-Security-Policy (CSP): Para mitigar ataques XSS e de injeção de dados.
+     - HTTP Strict Transport Security (HSTS): Para forçar o uso de HTTPS.
+     - X-Content-Type-Options: `nosniff` para prevenir MIME-sniffing.
+     - X-Frame-Options: `DENY` ou `SAMEORIGIN` para prevenir clickjacking.
+     - Referrer-Policy: Configurar adequadamente para proteger informações de referência.
+
+2.4. CONFIGURAÇÃO WAF/LOAD BALANCER:
+     - Revisar e otimizar as regras do WAF/Load Balancer do OCI para proteger contra as vulnerabilidades mais comuns de aplicações web.
+     - Assegurar que a filtragem agressiva não bloqueie tráfego legítimo, mas seja eficaz contra ataques.
+
+-------------------------------------------------------------------------
+3. MITIGAÇÃO DE VULNERABILIDADES - PORTA 2254/TCP (OPENSSH)
+   PRIORIDADE: MÉDIA
+-------------------------------------------------------------------------
+
+O serviço SSH foi bloqueado após detecção de força bruta, mas ainda representa um vetor se reativado ou mal configurado.
+
+AÇÕES:
+
+3.1. AVALIAR A NECESSIDADE DE ACESSO SSH EXTERNO:
+     - Determinar se o acesso SSH à internet é estritamente necessário para o servidor. Se não for, bloqueie a porta 2254 (e a porta 22) completamente no firewall de borda.
+
+3.2. RESTRINGIR ACESSO POR ENDEREÇO IP:
+     - Se o acesso externo for necessário, configure o firewall (no OCI ou no próprio servidor) para permitir conexões SSH apenas de endereços IP de administração confiáveis (whitelisting).
+
+3.3. DESATIVAR AUTENTICAÇÃO POR SENHA:
+     - Configure o servidor SSH para permitir exclusivamente a autenticação por chaves SSH (public/private key authentication). Desabilite completamente a autenticação por senha no `sshd_config` (`PasswordAuthentication no`).
+     - Garanta que as chaves SSH sejam geradas com força adequada e armazenadas de forma segura.
+
+3.4. MONITORAMENTO DE LOGS SSH:
+     - Monitore ativamente os logs de acesso SSH (`/var/log/auth.log` no Debian) para tentativas de login falhas e bem-sucedidas.
+     - Configure alertas para múltiplas tentativas de login falhas de um mesmo IP.
+
+-------------------------------------------------------------------------
+4. FORTALECIMENTO GERAL DO FIREWALL/WAF
+   PRIORIDADE: MÉDIA
+-------------------------------------------------------------------------
+
+A proteção de rede é um componente chave para a postura de segurança.
+
+AÇÕES:
+
+4.1. ANÁLISE E OTIMIZAÇÃO DE REGRAS DE FIREWALL/WAF:
+     - Realize uma auditoria completa das regras do firewall de borda (incluindo o OCI Load Balancer/WAF).
+     - Garanta que apenas as portas e serviços estritamente necessários estejam abertos.
+     - Remova regras antigas ou redundantes.
+     - Certifique-se de que as políticas de detecção e bloqueio de intrusão estejam ajustadas para equilibrar segurança e disponibilidade.
+
+4.2. IMPLEMENTAR SISTEMA DE PREVENÇÃO DE INTRUSÃO (IPS):
+     - Considere a implementação de um sistema IPS na borda da rede para detectar e bloquear proativamente ataques conhecidos e padrões de tráfego maliciosos.
+
+-------------------------------------------------------------------------
+# FIM DO RELATÓRIO
